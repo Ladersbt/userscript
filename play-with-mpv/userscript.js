@@ -8,7 +8,7 @@
 // @description:zh-CN   通过 mpv-handler 播放网页上的视频和歌曲
 // @description:zh-TW   通過 mpv-handler 播放網頁上的視頻和歌曲
 // @namespace           play-with-mpv-handler
-// @version             2025.12.31.1
+// @version             2026.03.24
 // @author              Akatsuki Rui
 // @license             MIT License
 // @require             https://cdn.jsdelivr.net/gh/sizzlemctwizzle/GM_config@06f2015c04db3aaab9717298394ca4f025802873/gm_config.js
@@ -32,42 +32,25 @@ const MPV_HANDLER_VERSION = "v0.4.0";
 const allow = true;
 const block = false;
 
-const SITE_YOUTUBE = {
-  mode: allow,
-  list: ["/watch", "/playlist", "/shorts"],
-};
-const SITE_TWITCH = {
-  mode: block,
-  list: ["/directory", "/downloads", "/jobs", "/p", "/turbo"],
-};
-const SITE_CRUNCHYROLL = {
-  mode: allow,
-  list: ["/watch"],
-};
-const SITE_BILIBILI = {
-  mode: allow,
-  list: ["/bangumi/play", "/video"],
-};
-const SITE_BILIBILI_LIVE = {
-  mode: block,
-  list: ["/p"],
-};
-const SITE_KICK = {
-  mode: block,
-  list: ["/browse", "/category"],
-};
+const SITE_YOUTUBE       = { mode: allow, list: ["/watch", "/playlist", "/shorts"] };
+const SITE_TWITCH        = { mode: block, list: ["/directory", "/downloads", "/jobs", "/p", "/turbo"] };
+const SITE_CRUNCHYROLL   = { mode: allow, list: ["/watch"] };
+const SITE_BILIBILI      = { mode: allow, list: ["/bangumi/play", "/video"] };
+const SITE_BILIBILI_LIVE = { mode: block, list: ["/p"] };
+const SITE_KICK          = { mode: block, list: ["/browse", "/category"] };
 
 const MATCHERS = {
-  "www.youtube.com": SITE_YOUTUBE,
-  "m.youtube.com": SITE_YOUTUBE,
-  "www.twitch.tv": SITE_TWITCH,
+  "www.youtube.com":     SITE_YOUTUBE,
+  "m.youtube.com":       SITE_YOUTUBE,
+  "www.twitch.tv":       SITE_TWITCH,
   "www.crunchyroll.com": SITE_CRUNCHYROLL,
-  "www.bilibili.com": SITE_BILIBILI,
-  "live.bilibili.com": SITE_BILIBILI_LIVE,
-  "kick.com": SITE_KICK,
+  "www.bilibili.com":    SITE_BILIBILI,
+  "live.bilibili.com":   SITE_BILIBILI_LIVE,
+  "kick.com":            SITE_KICK,
 };
 
-const ICON_MPV =
+// 内置 MPV 图标（base64 SVG），作为默认值和图标加载失败时的兜底
+const ICON_MPV_B64 =
   "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NCIgaGVpZ2h0\
 PSI2NCIgdmVyc2lvbj0iMSI+CiA8Y2lyY2xlIHN0eWxlPSJvcGFjaXR5Oi4yIiBjeD0iMzIiIGN5\
 PSIzMyIgcj0iMjgiLz4KIDxjaXJjbGUgc3R5bGU9ImZpbGw6IzhkMzQ4ZSIgY3g9IjMyIiBjeT0i\
@@ -82,7 +65,9 @@ OCAyOCAwIDAgMCA0IDMyIEEgMjggMjggMCAwIDAgNC4wMjE0ODQ0IDMyLjU4NTkzOCBBIDI4IDI4\
 IDAgMCAxIDMyIDUgQSAyOCAyOCAwIDAgMSA1OS45Nzg1MTYgMzIuNDE0MDYyIEEgMjggMjggMCAw\
 IDAgNjAgMzIgQSAyOCAyOCAwIDAgMCAzMiA0IHoiLz4KPC9zdmc+Cg==";
 
-const ICON_SETTINGS =
+const ICON_MPV_URL = `data:image/svg+xml;base64,${ICON_MPV_B64}`;
+
+const ICON_SETTINGS_B64 =
   "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0\
 PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0Ij4KIDxkZWZzPgogIDxzdHlsZSBpZD0iY3VycmVudC1j\
 b2xvci1zY2hlbWUiIHR5cGU9InRleHQvY3NzIj4KICAgLkNvbG9yU2NoZW1lLVRleHQgeyBjb2xv\
@@ -105,46 +90,35 @@ cm09InRyYW5zbGF0ZSg0IDQpIi8+Cjwvc3ZnPgo=";
 
 const css = String.raw;
 
-const MPV_CSS = css`
-  .play-with-mpv {
-    z-index: 99999;
-    position: fixed;
-    left: 8px;
-    bottom: 8px;
+// ─── 工具函数 ────────────────────────────────────────────────────────────────
+
+function btoaUrl(url) {
+  return btoa(url).replace(/\//g, "_").replace(/\+/g, "-").replace(/=/g, "");
+}
+
+function loadPosition() {
+  return { x: GM_getValue("buttonX", 8), y: GM_getValue("buttonY", 8) };
+}
+
+function savePosition(x, y) {
+  GM_setValue("buttonX", x);
+  GM_setValue("buttonY", y);
+}
+
+function getCurrentTime() {
+  for (const video of document.getElementsByTagName("video")) {
+    if (!Number.isNaN(video.currentTime) && video.currentTime > 0) return video.currentTime;
   }
-  .pwm-play {
-    width: 48px;
-    height: 48px;
-    border: 0;
-    border-radius: 50%;
-    background-size: 48px;
-    background-image: url(data:image/svg+xml;base64,${ICON_MPV});
-    background-repeat: no-repeat;
-  }
-  .pwm-settings {
-    opacity: 0;
-    visibility: hidden;
-    transition: all 0.2s ease-in-out;
-    display: block;
-    position: absolute;
-    top: -32px;
-    width: 32px;
-    height: 32px;
-    margin-left: 8px;
-    border: 0;
-    border-radius: 50%;
-    background-size: 32px;
-    background-color: #eeeeee;
-    background-image: url(data:image/svg+xml;base64,${ICON_SETTINGS});
-    background-repeat: no-repeat;
-  }
-  .pwm-play:hover + .pwm-settings,
-  .pwm-settings:hover {
-    opacity: 1;
-    visibility: visible;
-    transition: all 0.2s ease-in-out;
-  }
-`;
+  const first = document.getElementsByTagName("video")[0];
+  if (first && !Number.isNaN(first.currentTime) && first.currentTime > 0) return first.currentTime;
+  return null;
+}
+
+function pauseAllVideos() {
+  for (const video of document.getElementsByTagName("video")) video.pause();
+}
+
+// ─── 配置面板 ────────────────────────────────────────────────────────────────
 
 const CONFIG_ID = "play-with-mpv";
 
@@ -172,18 +146,26 @@ const CONFIG_CSS = css`
   }
   #${CONFIG_ID} .field_label {
     display: inline-block;
-    width: 140px;
+    width: 155px;
     font-size: 14px;
   }
   #${CONFIG_ID}_field_cookies,
-    #${CONFIG_ID}_field_profile,
-    #${CONFIG_ID}_field_quality,
-    #${CONFIG_ID}_field_v_codec,
-    #${CONFIG_ID}_field_console {
+  #${CONFIG_ID}_field_profile,
+  #${CONFIG_ID}_field_quality,
+  #${CONFIG_ID}_field_v_codec,
+  #${CONFIG_ID}_field_sync_time,
+  #${CONFIG_ID}_field_console,
+  #${CONFIG_ID}_field_icon_size,
+  #${CONFIG_ID}_field_icon_scale {
     width: 80px;
     height: 24px;
     font-size: 14px;
     text-align: center;
+  }
+  #${CONFIG_ID}_field_icon_url {
+    width: 200px;
+    height: 24px;
+    font-size: 12px;
   }
   #${CONFIG_ID}_buttons_holder {
     display: flex;
@@ -201,70 +183,90 @@ const CONFIG_CSS = css`
 const CONFIG_IFRAME_CSS = css`
   position: fixed;
   z-index: 99999;
-  width: 300px;
-  height: 400px;
+  width: 370px;
+  height: 560px;
   border: 1px solid;
   border-radius: 10px;
 `;
 
-const CONFIG_FIELDS = {
-  cookies: {
-    label: "Try Pass Cookies",
-    type: "select",
-    options: ["yes", "no"],
-    default: "no",
-  },
-  profile: {
-    label: "MPV Profile",
-    type: "text",
-    default: "default",
-  },
-  quality: {
-    label: "Prefer Video Quality",
-    type: "select",
-    options: ["default", "2160p", "1440p", "1080p", "720p", "480p", "360p"],
-    default: "default",
-  },
-  v_codec: {
-    label: "Prefer Video Codec",
-    type: "select",
-    options: ["default", "av01", "vp9", "h265", "h264"],
-    default: "default",
-  },
-  console: {
-    label: "Run With Console",
-    type: "select",
-    options: ["yes", "no"],
-    default: "yes",
-  },
-};
-
-// GM_config init
 GM_config.init({
   id: CONFIG_ID,
-  title: GM_info.script.name,
-  fields: CONFIG_FIELDS,
+  title: "使用 MPV 播放 — 设置",
+  fields: {
+    cookies: {
+      label: "传递 Cookies",
+      type: "select",
+      options: ["yes", "no"],
+      default: "no",
+    },
+    profile: {
+      label: "MPV 配置文件",
+      type: "text",
+      default: "default",
+    },
+    quality: {
+      label: "首选画质",
+      type: "select",
+      options: ["default", "2160p", "1440p", "1080p", "720p", "480p", "360p"],
+      default: "default",
+    },
+    v_codec: {
+      label: "首选视频编码",
+      type: "select",
+      options: ["default", "av01", "vp9", "h265", "h264"],
+      default: "default",
+    },
+    sync_time: {
+      label: "同步播放进度",
+      type: "select",
+      options: ["yes", "no"],
+      default: "yes",
+    },
+    console: {
+      label: "显示调试控制台",
+      type: "select",
+      options: ["yes", "no"],
+      default: "yes",
+    },
+    icon_url: {
+      label: "自定义图标",
+      title: "留空则使用内置 MPV 图标；支持 http/https 或 data: URL",
+      type: "text",
+      default: "",
+    },
+    icon_size: {
+      label: "图标基础大小 (px)",
+      title: "最终大小 = 基础大小 × 缩放比例",
+      type: "int",
+      min: 16,
+      max: 256,
+      default: 48,
+    },
+    icon_scale: {
+      label: "图标缩放比例",
+      title: "1.0 = 原始大小，1.5 = 放大 1.5 倍",
+      type: "float",
+      min: 0.2,
+      max: 5.0,
+      default: 1.0,
+    },
+  },
   events: {
     init: () => {
-      let quality = GM_config.get("quality").toLowerCase();
-      let v_codec = GM_config.get("v_codec").toLowerCase();
-
-      if (!CONFIG_FIELDS.quality.options.includes(quality)) {
-        GM_config.set("quality", "default");
-      }
-      if (!CONFIG_FIELDS.v_codec.options.includes(v_codec)) {
-        GM_config.set("v_codec", "default");
-      }
+      const quality = GM_config.get("quality").toLowerCase();
+      const v_codec = GM_config.get("v_codec").toLowerCase();
+      const validQ  = ["default","2160p","1440p","1080p","720p","480p","360p"];
+      const validV  = ["default","av01","vp9","h265","h264"];
+      if (!validQ.includes(quality)) GM_config.set("quality", "default");
+      if (!validV.includes(v_codec)) GM_config.set("v_codec", "default");
+      // 配置就绪后再应用图标外观（此处才是安全时机）
+      applyButtonAppearance();
+      updateButton();
     },
     save: () => {
-      let profile = GM_config.get("profile").trim();
-
-      if (profile === "") {
-        GM_config.set("profile", "default");
-      } else {
-        GM_config.set("profile", profile);
-      }
-
+      const profile = GM_config.get("profile").trim();
+      GM_config.set("profile", profile === "" ? "default" : profile);
+      applyButtonAppearance();
       updateButton();
       GM_config.close();
     },
@@ -275,190 +277,265 @@ GM_config.init({
   css: CONFIG_CSS.trim(),
 });
 
-// URL-safe base64 encode
-function btoaUrl(url) {
-  return btoa(url).replace(/\//g, "_").replace(/\+/g, "-").replace(/\=/g, "");
-}
+// ─── 协议生成 ────────────────────────────────────────────────────────────────
 
-// Generate protocol
-function generateProto(url) {
-  let cookies = GM_config.get("cookies").toLowerCase();
-  let profile = GM_config.get("profile").trim();
-  let quality = GM_config.get("quality").toLowerCase();
-  let v_codec = GM_config.get("v_codec").toLowerCase();
-  let console = GM_config.get("console").toLowerCase();
-  let options = [];
+function generateProto(url, startTime) {
+  const cookies      = GM_config.get("cookies").toLowerCase();
+  const profile      = GM_config.get("profile").trim();
+  const quality      = GM_config.get("quality").toLowerCase();
+  const v_codec      = GM_config.get("v_codec").toLowerCase();
+  const console_mode = GM_config.get("console").toLowerCase();
+  const options = [];
 
-  let proto;
+  let proto = (console_mode === "yes" ? "mpv-handler-debug" : "mpv-handler")
+    + "://play/" + btoaUrl(url);
 
-  if (console === "yes") {
-    proto = "mpv-handler-debug://play/" + btoaUrl(url);
-  } else {
-    proto = "mpv-handler://play/" + btoaUrl(url);
-  }
-  if (cookies === "yes") {
+  if (cookies === "yes")
     options.push("cookies=" + document.location.hostname + ".txt");
-  }
-  if (profile !== "default" && profile !== "") {
+  if (profile !== "default" && profile !== "")
     options.push("profile=" + profile);
-  }
-  if (quality !== "default") {
+  if (quality !== "default")
     options.push("quality=" + quality);
-  }
-  if (v_codec !== "default") {
+  if (v_codec !== "default")
     options.push("v_codec=" + v_codec);
-  }
+  if (startTime !== null && startTime !== undefined && startTime > 0)
+    options.push("startat=" + startTime);
 
-  if (options.length !== 0) {
-    proto += "/?";
-
-    options.forEach((option, index) => {
-      proto += option;
-
-      if (index + 1 !== options.length) {
-        proto += "&";
-      }
-    });
-  }
-
+  if (options.length > 0) proto += "/?" + options.join("&");
   return proto;
 }
 
-// Check the URL is matched or not
+// ─── URL 匹配 ────────────────────────────────────────────────────────────────
+
 function matchUrl() {
-  if (MATCHERS[location.hostname]) {
-    let site = MATCHERS[location.hostname];
-    let path = location.pathname;
-
-    for (const item of site.list) {
-      if (path.startsWith(item)) {
-        if (
-          path.charAt(item.length) === "/" ||
-          path.charAt(item.length) === ""
-        ) {
-          return site.mode;
-        }
-      }
+  const site = MATCHERS[location.hostname];
+  if (!site) return false;
+  const path = location.pathname;
+  for (const item of site.list) {
+    if (path.startsWith(item)) {
+      const next = path.charAt(item.length);
+      if (next === "/" || next === "") return site.mode;
     }
+  }
+  return path !== "/" ? !site.mode : false;
+}
 
-    if (path !== "/") {
-      return !site.mode;
-    }
+// ─── 按钮外观 ────────────────────────────────────────────────────────────────
 
-    return false;
+function applyButtonAppearance() {
+  const btn = document.querySelector(".pwm-play");
+  if (!btn) return;
+
+  // 防御性读取，GM_config 未就绪时使用默认值
+  const iconUrl   = (GM_config.get("icon_url")   ?? "").toString().trim();
+  const iconSize  = Number(GM_config.get("icon_size")  ?? 48) || 48;
+  const iconScale = Number(GM_config.get("icon_scale") ?? 1.0) || 1.0;
+  const finalSize = Math.round(iconSize * iconScale);
+
+  btn.style.width          = finalSize + "px";
+  btn.style.height         = finalSize + "px";
+  btn.style.backgroundSize = finalSize + "px";
+
+  if (iconUrl) {
+    // 预加载验证，失败时回退内置图标
+    const img = new Image();
+    img.onload  = () => { btn.style.backgroundImage = `url(${iconUrl})`; };
+    img.onerror = () => { btn.style.backgroundImage = `url(${ICON_MPV_URL})`; };
+    img.src = iconUrl;
+  } else {
+    btn.style.backgroundImage = `url(${ICON_MPV_URL})`;
   }
 }
 
-// Update button display status and URL
+// ─── 按钮显示状态 ────────────────────────────────────────────────────────────
+
 function updateButton() {
-  let isMatch = matchUrl();
-  let button = document.getElementsByClassName("pwm-play")[0];
-
-  if (button) {
-    button.style =
-      isMatch && !document.fullscreenElement
-        ? "display: block"
-        : "display: none";
-    button.href = isMatch ? generateProto(location.href) : "";
-  }
+  const btn = document.querySelector(".pwm-play");
+  if (!btn) return;
+  btn.style.display = matchUrl() && !document.fullscreenElement ? "block" : "none";
 }
 
-// Notify update about mpv-handler
+// ─── 拖拽 ────────────────────────────────────────────────────────────────────
+
+function makeDraggable(buttonDiv) {
+  const pos = loadPosition();
+  buttonDiv.style.left   = pos.x + "px";
+  buttonDiv.style.bottom = pos.y + "px";
+
+  buttonDiv.addEventListener("mousedown", (e) => {
+    if (e.target.closest(".pwm-settings") || e.target.closest(".pwm-play")) return;
+
+    const rect    = buttonDiv.getBoundingClientRect();
+    const offsetX = e.clientX - rect.left;
+    const offsetY = e.clientY - rect.top;
+    let dragged   = false;
+
+    function onMouseMove(e) {
+      dragged = true;
+      buttonDiv.classList.add("dragging");
+
+      const winW = window.innerWidth,  winH = window.innerHeight;
+      const divW = buttonDiv.offsetWidth, divH = buttonDiv.offsetHeight;
+
+      let newLeft = e.clientX - offsetX;
+      let newTop  = e.clientY - offsetY;
+
+      if (newLeft < 0) newLeft = 0;
+      if (newLeft + divW > winW) newLeft = winW - divW;
+      if (newTop  < 0) newTop  = 0;
+      if (newTop  + divH > winH) newTop = winH - divH;
+
+      const newBottom = winH - newTop - divH;
+      buttonDiv.style.left   = newLeft  + "px";
+      buttonDiv.style.bottom = newBottom + "px";
+      savePosition(newLeft, newBottom);
+    }
+
+    function onMouseUp() {
+      buttonDiv.classList.remove("dragging");
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup",   onMouseUp);
+      if (!dragged) triggerPlay();
+    }
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup",   onMouseUp);
+  });
+}
+
+// ─── 播放触发 ────────────────────────────────────────────────────────────────
+
+function triggerPlay() {
+  if (!matchUrl()) return;
+  const syncTime  = GM_config.get("sync_time").toLowerCase() === "yes";
+  const startTime = syncTime ? getCurrentTime() : null;
+  pauseAllVideos();
+  window.location.href = generateProto(location.href, startTime);
+}
+
+// ─── 更新通知 ────────────────────────────────────────────────────────────────
+
 function notifyUpdate() {
-  let version = GM_getValue("mpvHandlerVersion", null);
-
-  if (version !== MPV_HANDLER_VERSION) {
-    const UPDATE_NOTIFY = {
-      title: `${GM_info.script.name}`,
-      text: `mpv-handler is upgraded to ${MPV_HANDLER_VERSION}\n\nClick to check updates`,
-      onclick: () => {
-        window.open("https://github.com/akiirui/mpv-handler/releases/latest");
-      },
-    };
-
-    GM_notification(UPDATE_NOTIFY);
+  if (GM_getValue("mpvHandlerVersion", null) !== MPV_HANDLER_VERSION) {
+    GM_notification({
+      title: GM_info.script.name,
+      text: `mpv-handler 已更新至 ${MPV_HANDLER_VERSION}\n\n点击查看更新日志`,
+      onclick: () => window.open("https://github.com/akiirui/mpv-handler/releases/latest"),
+    });
     GM_setValue("mpvHandlerVersion", MPV_HANDLER_VERSION);
   }
 }
 
-// Add play and settings buttons to page
+// ─── 创建按钮 DOM ────────────────────────────────────────────────────────────
+
 function createButton() {
-  let head = document.getElementsByTagName("head")[0];
-  let style = document.createElement("style");
-
-  if (head) {
-    style.textContent = MPV_CSS.trim();
-    head.appendChild(style);
-  }
-
-  let body = document.body;
-  let buttonDiv = document.createElement("div");
-  let buttonPlay = document.createElement("a");
-  let buttonSettings = document.createElement("button");
-
-  let pauseVideo = (e) => {
-    let videoElement = document.getElementsByTagName("video")[0];
-    if (videoElement) {
-      videoElement.pause();
-    } else {
-      setTimeout(pauseVideo, 500, e);
+  const style = document.createElement("style");
+  style.textContent = css`
+    .play-with-mpv {
+      z-index: 99999;
+      position: fixed;
+      left: 8px;
+      bottom: 8px;
+      user-select: none;
+      -webkit-user-select: none;
     }
-    if (e.stopPropagation) e.stopPropagation();
-  };
+    .play-with-mpv.dragging {
+      outline: 2px solid rgba(141, 52, 142, 0.6);
+      border-radius: 50%;
+    }
+    .pwm-play {
+      display: block;
+      width: 48px;
+      height: 48px;
+      border: 0;
+      border-radius: 50%;
+      background-size: 48px;
+      background-image: url(data:image/svg+xml;base64,${ICON_MPV_B64});
+      background-repeat: no-repeat;
+      cursor: grab;
+      text-decoration: none;
+    }
+    .pwm-play:active {
+      cursor: grabbing;
+    }
+    .pwm-settings {
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.2s ease-in-out;
+      display: block;
+      position: absolute;
+      top: -32px;
+      width: 32px;
+      height: 32px;
+      margin-left: 8px;
+      border: 0;
+      border-radius: 50%;
+      background-size: 32px;
+      background-color: #eeeeee;
+      background-image: url(data:image/svg+xml;base64,${ICON_SETTINGS_B64});
+      background-repeat: no-repeat;
+      cursor: pointer;
+    }
+    .pwm-play:hover + .pwm-settings,
+    .pwm-settings:hover {
+      opacity: 1;
+      visibility: visible;
+      transition: all 0.2s ease-in-out;
+    }
+  `.trim();
 
-  if (body) {
-    buttonPlay.className = "pwm-play";
-    buttonPlay.style = "display: none";
-    buttonPlay.addEventListener("click", pauseVideo);
+  if (document.head) document.head.appendChild(style);
+  if (!document.body) return;
 
-    buttonSettings.className = "pwm-settings";
-    buttonSettings.addEventListener("click", () => {
-      if (!GM_config.isOpen) {
-        GM_config.open();
-        GM_config.frame.style = CONFIG_IFRAME_CSS.trim();
-      }
-    });
+  const buttonDiv      = document.createElement("div");
+  const buttonPlay     = document.createElement("a");
+  const buttonSettings = document.createElement("button");
 
-    buttonDiv.className = "play-with-mpv";
-    buttonDiv.appendChild(buttonPlay);
-    buttonDiv.appendChild(buttonSettings);
+  buttonPlay.className     = "pwm-play";
+  buttonPlay.style.display = "none";
+  // 键盘 / 辅助功能兜底
+  buttonPlay.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); triggerPlay(); });
 
-    body.appendChild(buttonDiv);
+  buttonSettings.className = "pwm-settings";
+  buttonSettings.title     = "打开设置";
+  buttonSettings.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (!GM_config.isOpen) {
+      GM_config.open();
+      GM_config.frame.style.cssText = CONFIG_IFRAME_CSS.trim();
+    }
+  });
 
-    document.addEventListener("fullscreenchange", () => {
-      let button = document.getElementsByClassName("pwm-play")[0];
+  buttonDiv.className = "play-with-mpv";
+  buttonDiv.appendChild(buttonPlay);
+  buttonDiv.appendChild(buttonSettings);
+  document.body.appendChild(buttonDiv);
 
-      button.style = document.fullscreenElement
-        ? "display: none"
-        : "display: block";
-    });
-  }
+  makeDraggable(buttonDiv);
+  // 注意：applyButtonAppearance() 在 GM_config init 事件里调用，此处不再调用
+  document.addEventListener("fullscreenchange", updateButton);
 }
 
-// Detect PJAX changes
+// ─── PJAX / SPA 路由监测 ────────────────────────────────────────────────────
+
 function detectPJAX() {
   let previousUrl = null;
-  let currentUrl = null;
-
   setInterval(() => {
-    currentUrl = location.href;
-
-    if (previousUrl !== currentUrl) {
-      updateButton();
-      previousUrl = currentUrl;
-    }
+    const cur = location.href;
+    if (previousUrl !== cur) { updateButton(); previousUrl = cur; }
   }, 500);
 }
 
-// Fix TrustedHTML
+// ─── TrustedHTML 兼容 ────────────────────────────────────────────────────────
+
 if (window.trustedTypes && !trustedTypes.defaultPolicy) {
-  const passThroughFn = (x) => x;
+  const pass = (x) => x;
   trustedTypes.createPolicy("default", {
-    createHTML: passThroughFn,
-    createScriptURL: passThroughFn,
-    createScript: passThroughFn,
+    createHTML: pass, createScriptURL: pass, createScript: pass,
   });
 }
+
+// ─── 启动 ────────────────────────────────────────────────────────────────────
 
 notifyUpdate();
 createButton();
