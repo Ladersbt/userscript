@@ -8,7 +8,7 @@
 // @description:zh-CN   通过 mpv-handler 播放网页上的视频和歌曲
 // @description:zh-TW   通過 mpv-handler 播放網頁上的視頻和歌曲
 // @namespace           play-with-mpv-handler
-// @version             2026.03.24
+// @version             2026.05.24
 // @author              Akatsuki Rui
 // @license             MIT License
 // @require             https://cdn.jsdelivr.net/gh/sizzlemctwizzle/GM_config@06f2015c04db3aaab9717298394ca4f025802873/gm_config.js
@@ -105,12 +105,11 @@ function savePosition(x, y) {
   GM_setValue("buttonY", y);
 }
 
+// ★ 修改：移除循环后冗余的重复取 video[0] 判断（死代码），逻辑完全等价
 function getCurrentTime() {
   for (const video of document.getElementsByTagName("video")) {
     if (!Number.isNaN(video.currentTime) && video.currentTime > 0) return video.currentTime;
   }
-  const first = document.getElementsByTagName("video")[0];
-  if (first && !Number.isNaN(first.currentTime) && first.currentTime > 0) return first.currentTime;
   return null;
 }
 
@@ -118,37 +117,101 @@ function pauseAllVideos() {
   for (const video of document.getElementsByTagName("video")) video.pause();
 }
 
+function hideMainButton() {
+  const root = document.querySelector(".play-with-mpv");
+  if (root) root.style.display = "none";
+}
+
+function showMainButton() {
+  const root = document.querySelector(".play-with-mpv");
+  if (root) root.style.display = "";
+}
+
 // ─── 配置面板 ────────────────────────────────────────────────────────────────
 
 const CONFIG_ID = "play-with-mpv";
 
 const CONFIG_CSS = css`
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&display=swap');
+
+  * { box-sizing: border-box; }
+
   body {
     display: flex;
     justify-content: center;
+    align-items: center;
     height: 100%;
     width: 100%;
     margin: 0;
     padding: 0;
+    background: linear-gradient(135deg, rgba(109,40,110,0.18) 0%, rgba(30,20,50,0.22) 100%);
+    font-family: 'DM Sans', system-ui, sans-serif;
   }
+
   #${CONFIG_ID}_wrapper {
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    width: 99%;
+    height: 100%;
+    padding: 0 12px 12px;
+    overflow-y: auto;
+    margin-left: auto;  /* 保证面板居中 */
+    margin-right: auto; /* 保证面板居中 */
   }
+
+  /* ── 标题栏 ── */
   #${CONFIG_ID} .config_header {
     display: flex;
     align-items: center;
-    padding: 12px;
+    gap: 10px;
+    padding: 18px 4px 14px;
+    font-size: 15px;
+    font-weight: 600;
+    color: #d4b8ff;
+    letter-spacing: 0.01em;
+    border-bottom: 1px solid rgba(180,130,255,0.15);
+    margin-bottom: 16px;
   }
+  #${CONFIG_ID} .config_header::before {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #a855f7;
+    box-shadow: 0 0 8px #a855f7;
+    flex-shrink: 0;
+  }
+
+  /* ── 每行设置项 ── */
   #${CONFIG_ID} .config_var {
-    margin: 0 0 12px 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 0 0 10px 0;
+    padding: 12px 4px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.07);
+    transition: background 0.15s;
   }
+  #${CONFIG_ID} .config_var:hover {
+    background: rgba(168,85,247,0.08);
+    border-color: rgba(168,85,247,0.2);
+  }
+
+  /* ── 标签 ── */
   #${CONFIG_ID} .field_label {
     display: inline-block;
-    width: 155px;
-    font-size: 14px;
+    width: auto;
+    font-size: 13px;
+    font-weight: 500;
+    color: #c4b5d8;
+    letter-spacing: 0.01em;
+    flex: 1;
   }
+
+  /* ── 下拉 & 文本输入公共样式 ── */
   #${CONFIG_ID}_field_cookies,
   #${CONFIG_ID}_field_profile,
   #${CONFIG_ID}_field_quality,
@@ -156,42 +219,145 @@ const CONFIG_CSS = css`
   #${CONFIG_ID}_field_sync_time,
   #${CONFIG_ID}_field_console,
   #${CONFIG_ID}_field_icon_size,
+  #${CONFIG_ID}_field_icon_scale,
+  /* ★ 新增：auto_play 字段样式 */
+  #${CONFIG_ID}_field_auto_play,
+  #${CONFIG_ID}_field_icon_url {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(168,85,247,0.3);
+    border-radius: 8px;
+    color: #e8d8ff;
+    font-family: 'DM Sans', system-ui, sans-serif;
+    font-size: 13px;
+    padding: 4px 8px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    appearance: auto;
+  }
+  #${CONFIG_ID}_field_cookies,
+  #${CONFIG_ID}_field_quality,
+  #${CONFIG_ID}_field_v_codec,
+  #${CONFIG_ID}_field_sync_time,
+  #${CONFIG_ID}_field_console,
+  /* ★ 新增：auto_play 尺寸与其他下拉保持一致 */
+  #${CONFIG_ID}_field_auto_play {
+    width: 90px;
+    height: 30px;
+    text-align: center;
+  }
+  #${CONFIG_ID}_field_profile,
+  #${CONFIG_ID}_field_icon_size,
   #${CONFIG_ID}_field_icon_scale {
-    width: 80px;
-    height: 24px;
-    font-size: 14px;
+    width: 90px;
+    height: 30px;
     text-align: center;
   }
   #${CONFIG_ID}_field_icon_url {
-    width: 200px;
-    height: 24px;
-    font-size: 12px;
+    width: 160px;
+    height: 30px;
+    font-size: 11px;
   }
+  #${CONFIG_ID}_field_cookies:focus,
+  #${CONFIG_ID}_field_profile:focus,
+  #${CONFIG_ID}_field_quality:focus,
+  #${CONFIG_ID}_field_v_codec:focus,
+  #${CONFIG_ID}_field_sync_time:focus,
+  #${CONFIG_ID}_field_console:focus,
+  #${CONFIG_ID}_field_icon_size:focus,
+  #${CONFIG_ID}_field_icon_scale:focus,
+  /* ★ 新增：auto_play focus 高亮 */
+  #${CONFIG_ID}_field_auto_play:focus,
+  #${CONFIG_ID}_field_icon_url:focus {
+    border-color: rgba(168,85,247,0.7);
+    box-shadow: 0 0 0 3px rgba(168,85,247,0.15);
+  }
+
+  /* ── 按钮区 ── */
   #${CONFIG_ID}_buttons_holder {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    gap: 8px;
+    margin-top: 6px;
   }
   #${CONFIG_ID} .saveclose_buttons {
-    margin: 1px;
-    padding: 4px 0;
+    flex: 1;
+    margin: 0;
+    padding: 8px 0;
+    border-radius: 10px;
+    border: none;
+    font-family: 'DM Sans', system-ui, sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.18s;
+  }
+  /* 保存按钮 */
+  #${CONFIG_ID}_saveBtn {
+    background: linear-gradient(135deg, #9333ea, #6d28d9);
+    color: #fff;
+    box-shadow: 0 2px 12px rgba(147,51,234,0.35);
+  }
+  #${CONFIG_ID}_saveBtn:hover {
+    box-shadow: 0 4px 20px rgba(147,51,234,0.55);
+    transform: translateY(-1px);
+  }
+  /* 关闭按钮 */
+  #${CONFIG_ID}_closeBtn {
+    background: rgba(255,255,255,0.07);
+    color: #c4b5d8;
+    border: 1px solid rgba(255,255,255,0.12) !important;
+  }
+  #${CONFIG_ID}_closeBtn:hover {
+    background: rgba(255,255,255,0.12);
   }
   #${CONFIG_ID} .reset_holder {
-    padding-top: 4px;
+    padding-top: 0;
+    display: flex;
+  }
+  /* 重置按钮 */
+  #${CONFIG_ID}_resetBtn {
+    flex: 1;
+    padding: 7px 0;
+    border-radius: 10px;
+    border: 1px solid rgba(239,68,68,0.25) !important;
+    background: rgba(239,68,68,0.06);
+    color: rgba(252,165,165,0.8);
+    font-family: 'DM Sans', system-ui, sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.18s;
+  }
+  #${CONFIG_ID}_resetBtn:hover {
+    background: rgba(239,68,68,0.12);
+    border-color: rgba(239,68,68,0.4) !important;
+    color: #fca5a5;
   }
 `;
 
+// ★ 修改：CONFIG_IFRAME_CSS 中 width/max-width 的 30px 是原脚本笔误，修正为 430px
 const CONFIG_IFRAME_CSS = css`
   position: fixed;
   z-index: 99999;
-  width: 370px;
-  height: 560px;
-  border: 1px solid;
-  border-radius: 10px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(430px, calc(100vw - 32px)) !important;
+  height: min(520px, calc(100vh - 32px));
+  max-width: 430px !important;
+  max-height: 520px;
+  border: 1px solid rgba(168, 85, 247, 0.25);
+  border-radius: 18px;
+  background: rgba(18, 10, 30, 0.82);
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  box-shadow: 0 8px 48px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.06) inset, 0 1px 0 rgba(255,255,255,0.1) inset;
+  animation: pwm-panel-in 0.22s cubic-bezier(0.34,1.56,0.64,1) both;
 `;
 
 GM_config.init({
   id: CONFIG_ID,
-  title: "使用 MPV 播放 — 设置",
+  title: "设置",
   fields: {
     cookies: {
       label: "传递 Cookies",
@@ -228,6 +394,14 @@ GM_config.init({
       options: ["yes", "no"],
       default: "yes",
     },
+    // ★ 新增：自动启动开关字段
+    auto_play: {
+      label: "检测到播放时自动启动 MPV",
+      title: "开启后，页面视频开始播放时自动调用 MPV，无需手动点击图标",
+      type: "select",
+      options: ["yes", "no"],
+      default: "no",
+    },
     icon_url: {
       label: "自定义图标",
       title: "留空则使用内置 MPV 图标；支持 http/https 或 data: URL",
@@ -262,12 +436,27 @@ GM_config.init({
       // 配置就绪后再应用图标外观（此处才是安全时机）
       applyButtonAppearance();
       updateButton();
+      // ★ 新增：配置就绪后启动自动播放监听
+      setupAutoPlay();
     },
+
+    // ★ 修改：统一缩进为空格，与其余事件保持一致（原脚本 open/close 用了制表符）
+    open: () => {
+      hideMainButton();
+    },
+
+    close: () => {
+      showMainButton();
+      updateButton();
+    },
+
     save: () => {
       const profile = GM_config.get("profile").trim();
       GM_config.set("profile", profile === "" ? "default" : profile);
       applyButtonAppearance();
       updateButton();
+      // ★ 新增：保存后立即重新应用自动播放监听（开/关即时生效）
+      setupAutoPlay();
       GM_config.close();
     },
     reset: () => {
@@ -413,6 +602,32 @@ function triggerPlay() {
   window.location.href = generateProto(location.href, startTime);
 }
 
+// ─── 自动启动 MPV ────────────────────────────────────────────────────────────
+// ★ 新增：以下全部为新增代码
+
+// 记录当前绑定的捕获阶段监听器，用于重置时移除旧监听
+let _autoPlayHandler = null;
+
+function setupAutoPlay() {
+  // 先清理上一次绑定，避免保存设置后重复挂载
+  if (_autoPlayHandler) {
+    document.removeEventListener("play", _autoPlayHandler, true);
+    _autoPlayHandler = null;
+  }
+
+  if (GM_config.get("auto_play").toLowerCase() !== "yes") return;
+
+  _autoPlayHandler = (e) => {
+    // 只响应 video 元素的 play 事件，且当前 URL 必须匹配规则
+    if (!(e.target instanceof HTMLVideoElement)) return;
+    if (!matchUrl()) return;
+    triggerPlay();
+  };
+
+  // 捕获阶段监听：确保 SPA 动态替换的 video 元素也能被捕获到
+  document.addEventListener("play", _autoPlayHandler, true);
+}
+
 // ─── 更新通知 ────────────────────────────────────────────────────────────────
 
 function notifyUpdate() {
@@ -431,6 +646,18 @@ function notifyUpdate() {
 function createButton() {
   const style = document.createElement("style");
   style.textContent = css`
+    @keyframes pwm-ripple {
+      to { transform: scale(3.5); opacity: 0; }
+    }
+    @keyframes pwm-panel-in {
+      from { opacity: 0; transform: translate(-50%, -48%) scale(0.96); }
+      to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    }
+    @keyframes pwm-glow-pulse {
+      0%, 100% { box-shadow: 0 0 14px 2px rgba(168,85,247,0.35), 0 4px 20px rgba(0,0,0,0.4); }
+      50%       { box-shadow: 0 0 22px 5px rgba(168,85,247,0.55), 0 4px 24px rgba(0,0,0,0.45); }
+    }
+
     .play-with-mpv {
       z-index: 99999;
       position: fixed;
@@ -438,49 +665,100 @@ function createButton() {
       bottom: 8px;
       user-select: none;
       -webkit-user-select: none;
+      /* 让设置按钮溢出不被裁剪 */
+      overflow: visible;
     }
-    .play-with-mpv.dragging {
-      outline: 2px solid rgba(141, 52, 142, 0.6);
-      border-radius: 50%;
+
+    /* 拖拽中：柔和紫色发光轮廓 */
+    .play-with-mpv.dragging .pwm-play {
+      box-shadow: 0 0 0 3px rgba(168,85,247,0.7), 0 0 20px rgba(168,85,247,0.4);
+      transform: scale(1.06);
     }
+
+    /* ── 主播放按钮 ── */
     .pwm-play {
       display: block;
       width: 48px;
       height: 48px;
       border: 0;
       border-radius: 50%;
-      background-size: 48px;
-      background-image: url(data:image/svg+xml;base64,${ICON_MPV_B64});
+      background-color: rgba(20, 10, 35, 0.55);
+      background-size: 72%;
+      background-position: center;
       background-repeat: no-repeat;
+      background-image: url(data:image/svg+xml;base64,${ICON_MPV_B64});
+      backdrop-filter: blur(12px) saturate(1.5);
+      -webkit-backdrop-filter: blur(12px) saturate(1.5);
+      box-shadow: 0 0 14px 2px rgba(168,85,247,0.35), 0 4px 20px rgba(0,0,0,0.4);
       cursor: grab;
       text-decoration: none;
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.2s cubic-bezier(0.34,1.56,0.64,1),
+                  box-shadow 0.2s ease,
+                  background-color 0.2s ease;
+      animation: pwm-glow-pulse 3s ease-in-out infinite;
+    }
+    .pwm-play:hover {
+      transform: scale(1.13);
+      background-color: rgba(30, 14, 50, 0.72);
+      box-shadow: 0 0 22px 5px rgba(168,85,247,0.55), 0 6px 28px rgba(0,0,0,0.5);
+      animation: none;
     }
     .pwm-play:active {
       cursor: grabbing;
+      transform: scale(0.96);
     }
+
+    /* 点击波纹 */
+    .pwm-ripple {
+      position: absolute;
+      border-radius: 50%;
+      width: 14px;
+      height: 14px;
+      background: rgba(200,160,255,0.45);
+      transform: scale(0);
+      animation: pwm-ripple 0.5s ease-out forwards;
+      pointer-events: none;
+    }
+
+    /* ── 设置齿轮按钮 ── */
     .pwm-settings {
       opacity: 0;
       visibility: hidden;
-      transition: all 0.2s ease-in-out;
+      transform: translateX(-6px) scale(0.85);
+      transition: opacity 0.2s ease, visibility 0.2s, transform 0.2s cubic-bezier(0.34,1.56,0.64,1);
       display: block;
       position: absolute;
-      top: -32px;
-      width: 32px;
-      height: 32px;
-      margin-left: 8px;
+      top: 50%;
+      left: calc(100% + 8px);
+      translate: 0 -50%;
+      width: 37px;
+      height: 37px;
       border: 0;
       border-radius: 50%;
-      background-size: 32px;
-      background-color: #eeeeee;
-      background-image: url(data:image/svg+xml;base64,${ICON_SETTINGS_B64});
+      background-color: rgba(255, 255, 255, 0.7);
+      background-size: 60%;
+      background-position: center;
       background-repeat: no-repeat;
+      background-image: url(data:image/svg+xml;base64,${ICON_SETTINGS_B64});
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      box-shadow: 0 2px 10px rgba(0,0,0,0.35), 0 0 0 1px rgba(168,85,247,0.2);
       cursor: pointer;
     }
-    .pwm-play:hover + .pwm-settings,
+    .pwm-play:hover ~ .pwm-settings,
     .pwm-settings:hover {
       opacity: 1;
       visibility: visible;
-      transition: all 0.2s ease-in-out;
+      transform: translateX(0) scale(1);
+    }
+    .pwm-settings:hover {
+      background-color: rgba(200, 180, 240, 0.7);
+      box-shadow: 0 2px 14px rgba(0,0,0,0.4), 0 0 0 1px rgba(168,85,247,0.45);
+    }
+    .pwm-settings:active {
+      transform: scale(0.92) translateX(0);
     }
   `.trim();
 
@@ -493,16 +771,97 @@ function createButton() {
 
   buttonPlay.className     = "pwm-play";
   buttonPlay.style.display = "none";
-  // 键盘 / 辅助功能兜底
-  buttonPlay.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); triggerPlay(); });
+  // 键盘 / 辅助功能兜底 + 波纹动效
+  buttonPlay.addEventListener("click", (e) => {
+    e.preventDefault(); e.stopPropagation();
+    // 波纹
+    const ripple = document.createElement("span");
+    ripple.className = "pwm-ripple";
+    const rect = buttonPlay.getBoundingClientRect();
+    ripple.style.left = (e.clientX - rect.left - 7) + "px";
+    ripple.style.top  = (e.clientY - rect.top  - 7) + "px";
+    buttonPlay.appendChild(ripple);
+    ripple.addEventListener("animationend", () => ripple.remove());
+    triggerPlay();
+  });
 
   buttonSettings.className = "pwm-settings";
   buttonSettings.title     = "打开设置";
+
+  // ★ 修改：localizeConfigButtons 提出到正确层级（原脚本此函数错误地嵌入在
+  //   buttonSettings.title 赋值语句后，导致缩进/结构混乱）
+  function localizeConfigButtons(frame, retry = 0) {
+    try {
+      const doc = frame.contentDocument || frame.contentWindow.document;
+      if (!doc) return;
+
+      const saveBtn  = doc.getElementById(CONFIG_ID + "_saveBtn");
+      const closeBtn = doc.getElementById(CONFIG_ID + "_closeBtn");
+      const resetBtn = doc.getElementById(CONFIG_ID + "_resetBtn");
+
+      if (!saveBtn || !closeBtn || !resetBtn) {
+        if (retry < 20) {
+          setTimeout(() => localizeConfigButtons(frame, retry + 1), 50);
+        }
+        return;
+      }
+
+      if (saveBtn) {
+        saveBtn.value = "保存";
+        saveBtn.textContent = "保存";
+        saveBtn.title = "保存";
+        saveBtn.setAttribute("aria-label", "保存");
+      }
+
+      if (closeBtn) {
+        closeBtn.value = "关闭";
+        closeBtn.textContent = "关闭";
+        closeBtn.title = "关闭";
+        closeBtn.setAttribute("aria-label", "关闭");
+      }
+
+      if (resetBtn) {
+        resetBtn.value = "恢复默认值";
+        resetBtn.textContent = "恢复默认值";
+        resetBtn.title = "恢复默认值";
+        resetBtn.setAttribute("aria-label", "恢复默认值");
+      }
+
+      frame.style.visibility = "";
+      frame.style.opacity = "1";
+      frame.style.transition = "opacity 0.15s ease";
+    } catch (_) {
+      if (retry < 20) {
+        setTimeout(() => localizeConfigButtons(frame, retry + 1), 50);
+      } else {
+        frame.style.visibility = "";
+        frame.style.opacity = "1";
+      }
+    }
+  }
+
   buttonSettings.addEventListener("click", (e) => {
     e.stopPropagation();
     if (!GM_config.isOpen) {
+      hideMainButton();
       GM_config.open();
-      GM_config.frame.style.cssText = CONFIG_IFRAME_CSS.trim();
+
+      setTimeout(() => {
+        const frame = document.getElementById(CONFIG_ID + "_frame");
+        if (!frame) return;
+
+        // 先隐藏，等按钮汉化完成再显示（避免闪烁）
+        frame.style.visibility = "hidden";
+        frame.style.opacity = "0";
+        // 用 cssText 整体替换，这是最后写入，稳赢
+        frame.style.cssText = CONFIG_IFRAME_CSS.trim();
+
+        if (frame.contentDocument && frame.contentDocument.readyState === "complete") {
+          localizeConfigButtons(frame);
+        } else {
+          frame.addEventListener("load", () => localizeConfigButtons(frame), { once: true });
+        }
+      }, 50);
     }
   });
 
