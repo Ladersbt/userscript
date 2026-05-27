@@ -8,7 +8,7 @@
 // @description:zh-CN   通过 mpv-handler 播放网页上的视频和歌曲
 // @description:zh-TW   通過 mpv-handler 播放網頁上的視頻和歌曲
 // @namespace           play-with-mpv-handler
-// @version             2026.05.24
+// @version             2026.05.25
 // @author              Akatsuki Rui
 // @license             MIT License
 // @require             https://cdn.jsdelivr.net/gh/sizzlemctwizzle/GM_config@06f2015c04db3aaab9717298394ca4f025802873/gm_config.js
@@ -90,10 +90,16 @@ cm09InRyYW5zbGF0ZSg0IDQpIi8+Cjwvc3ZnPgo=";
 
 const css = String.raw;
 
+// ★ 新增(c)：auto_play_mode 枚举常量，避免中文字符串直接参与逻辑比较
+const MODE_PER_VIDEO   = "每次切换视频";
+const MODE_FIRST_LOAD  = "仅首次加载";
+
 // ─── 工具函数 ────────────────────────────────────────────────────────────────
 
+// ★ 修改(c)：原 btoa() 不支持非 ASCII 字符，B站含中文参数的 URL 会抛 InvalidCharacterError
+//   改用 encodeURIComponent + unescape 先转为 Latin-1 兼容字符串再 btoa
 function btoaUrl(url) {
-  return btoa(url).replace(/\//g, "_").replace(/\+/g, "-").replace(/=/g, "");
+  return btoa(unescape(encodeURIComponent(url))).replace(/\//g, "_").replace(/\+/g, "-").replace(/=/g, "");
 }
 
 function loadPosition() {
@@ -220,8 +226,10 @@ const CONFIG_CSS = css`
   #${CONFIG_ID}_field_console,
   #${CONFIG_ID}_field_icon_size,
   #${CONFIG_ID}_field_icon_scale,
-  /* ★ 新增：auto_play 字段样式 */
+  /* ★ 新增：auto_play / takeover / auto_play_mode 字段样式 */
   #${CONFIG_ID}_field_auto_play,
+  #${CONFIG_ID}_field_takeover,
+  #${CONFIG_ID}_field_auto_play_mode,
   #${CONFIG_ID}_field_icon_url {
     background: rgba(255,255,255,0.08);
     border: 1px solid rgba(168,85,247,0.3);
@@ -239,8 +247,10 @@ const CONFIG_CSS = css`
   #${CONFIG_ID}_field_v_codec,
   #${CONFIG_ID}_field_sync_time,
   #${CONFIG_ID}_field_console,
-  /* ★ 新增：auto_play 尺寸与其他下拉保持一致 */
-  #${CONFIG_ID}_field_auto_play {
+  /* ★ 新增：auto_play / takeover / auto_play_mode 尺寸与其他下拉保持一致 */
+  #${CONFIG_ID}_field_auto_play,
+  #${CONFIG_ID}_field_takeover,
+  #${CONFIG_ID}_field_auto_play_mode {
     width: 90px;
     height: 30px;
     text-align: center;
@@ -265,8 +275,10 @@ const CONFIG_CSS = css`
   #${CONFIG_ID}_field_console:focus,
   #${CONFIG_ID}_field_icon_size:focus,
   #${CONFIG_ID}_field_icon_scale:focus,
-  /* ★ 新增：auto_play focus 高亮 */
+  /* ★ 新增：auto_play / takeover / auto_play_mode focus 高亮 */
   #${CONFIG_ID}_field_auto_play:focus,
+  #${CONFIG_ID}_field_takeover:focus,
+  #${CONFIG_ID}_field_auto_play_mode:focus,
   #${CONFIG_ID}_field_icon_url:focus {
     border-color: rgba(168,85,247,0.7);
     box-shadow: 0 0 0 3px rgba(168,85,247,0.15);
@@ -394,10 +406,25 @@ GM_config.init({
       options: ["yes", "no"],
       default: "yes",
     },
-    // ★ 新增：自动启动开关字段
+    // ★ 修改：auto_play 重命名含义更清晰；新增 takeover（接管播放）和 auto_play_mode（触发时机）
     auto_play: {
-      label: "检测到播放时自动启动 MPV",
-      title: "开启后，页面视频开始播放时自动调用 MPV，无需手动点击图标",
+      label: "首次播放时自动启动 MPV",
+      title: "开启后，每个视频页面首次播放时自动调用一次 MPV，之后不再干预",
+      type: "select",
+      options: ["yes", "no"],
+      default: "no",
+    },
+    auto_play_mode: {
+      label: "自动启动的触发时机",
+      title: "每次切换视频：URL 变化后重置，下一个视频再触发一次\n仅首次加载：只在页面硬加载后的第一次播放触发，SPA 跳转不重置",
+      type: "select",
+      // ★ 修改(c)：options/default 与常量保持一致，改动量最小，值本身不变
+      options: [MODE_PER_VIDEO, MODE_FIRST_LOAD],
+      default: MODE_PER_VIDEO,
+    },
+    takeover: {
+      label: "接管网站播放器（持续调用 MPV）",
+      title: "开启后，只要页面视频播放就调用 MPV，关闭 MPV 后用网站播放器继续看也会再次触发\n与「首次自动启动」独立，可单独开启",
       type: "select",
       options: ["yes", "no"],
       default: "no",
@@ -438,6 +465,7 @@ GM_config.init({
       updateButton();
       // ★ 新增：配置就绪后启动自动播放监听
       setupAutoPlay();
+      setupTakeover();
     },
 
     // ★ 修改：统一缩进为空格，与其余事件保持一致（原脚本 open/close 用了制表符）
@@ -457,6 +485,7 @@ GM_config.init({
       updateButton();
       // ★ 新增：保存后立即重新应用自动播放监听（开/关即时生效）
       setupAutoPlay();
+      setupTakeover();
       GM_config.close();
     },
     reset: () => {
@@ -515,8 +544,9 @@ function applyButtonAppearance() {
   const btn = document.querySelector(".pwm-play");
   if (!btn) return;
 
-  // 防御性读取，GM_config 未就绪时使用默认值
-  const iconUrl   = (GM_config.get("icon_url")   ?? "").toString().trim();
+  // ★ 修改(c)：加白名单校验，过滤 javascript: 等危险协议，只允许 http/https/data:image/
+  const iconUrlRaw = (GM_config.get("icon_url") ?? "").toString().trim();
+  const iconUrl    = /^(https?:|data:image\/)/.test(iconUrlRaw) ? iconUrlRaw : "";
   const iconSize  = Number(GM_config.get("icon_size")  ?? 48) || 48;
   const iconScale = Number(GM_config.get("icon_scale") ?? 1.0) || 1.0;
   const finalSize = Math.round(iconSize * iconScale);
@@ -602,14 +632,37 @@ function triggerPlay() {
   window.location.href = generateProto(location.href, startTime);
 }
 
-// ─── 自动启动 MPV ────────────────────────────────────────────────────────────
-// ★ 新增：以下全部为新增代码
+// ─── 自动启动 / 接管播放 ─────────────────────────────────────────────────────
+// ★ 修改：完整重写此区块，拆分为功能 A（首次自动启动）和功能 B（接管播放），
+//   同时加入去抖逻辑修复 YouTube 双窗口 bug
 
-// 记录当前绑定的捕获阶段监听器，用于重置时移除旧监听
-let _autoPlayHandler = null;
+// ★ 修改(c)：改为按 key 各持独立计时器，auto 和 takeover 互不干扰
+const _debounceTimers = {};
+function triggerPlayDebounced(key) {
+  if (_debounceTimers[key]) return;
+  _debounceTimers[key] = setTimeout(() => {
+    delete _debounceTimers[key];
+    triggerPlay();
+  }, 500);
+}
+
+// 判断 video 元素是否为"真实可见的主播放器"，过滤掉广告槽/预加载隐藏 video
+function isVisibleVideo(video) {
+  if (!video.src && !video.currentSrc) return false;
+  if (video.offsetWidth === 0 && video.offsetHeight === 0) return false;
+  const style = window.getComputedStyle(video);
+  if (style.display === "none" || style.visibility === "hidden") return false;
+  return true;
+}
+
+// ── 功能 A：首次自动启动 ──────────────────────────────────────────────────────
+// ★ 修改(c)：_autoPlayFired 从 boolean 改为记录已触发的 URL 字符串
+//   handler 内部比对 location.href，彻底消除 detectPJAX 500ms 重置的竞态窗口
+let _autoPlayFiredUrl = null;
+let _autoPlayHandler  = null;
 
 function setupAutoPlay() {
-  // 先清理上一次绑定，避免保存设置后重复挂载
+  // 先清理旧监听
   if (_autoPlayHandler) {
     document.removeEventListener("play", _autoPlayHandler, true);
     _autoPlayHandler = null;
@@ -618,14 +671,37 @@ function setupAutoPlay() {
   if (GM_config.get("auto_play").toLowerCase() !== "yes") return;
 
   _autoPlayHandler = (e) => {
-    // 只响应 video 元素的 play 事件，且当前 URL 必须匹配规则
     if (!(e.target instanceof HTMLVideoElement)) return;
     if (!matchUrl()) return;
-    triggerPlay();
+    if (!isVisibleVideo(e.target)) return;
+    if (_autoPlayFiredUrl === location.href) return; // ★ 修改(c)：比对 URL 而非 boolean
+    _autoPlayFiredUrl = location.href;
+    triggerPlayDebounced("auto");                     // ★ 修改(c)：传入标识，使用独立 debounce
   };
 
-  // 捕获阶段监听：确保 SPA 动态替换的 video 元素也能被捕获到
   document.addEventListener("play", _autoPlayHandler, true);
+}
+
+// ── 功能 B：接管播放 ──────────────────────────────────────────────────────────
+let _takeoverHandler = null;
+
+function setupTakeover() {
+  // 先清理旧监听
+  if (_takeoverHandler) {
+    document.removeEventListener("play", _takeoverHandler, true);
+    _takeoverHandler = null;
+  }
+
+  if (GM_config.get("takeover").toLowerCase() !== "yes") return;
+
+  _takeoverHandler = (e) => {
+    if (!(e.target instanceof HTMLVideoElement)) return;
+    if (!matchUrl()) return;
+    if (!isVisibleVideo(e.target)) return;
+    triggerPlayDebounced("takeover"); // ★ 修改(c)：传入标识，使用独立 debounce
+  };
+
+  document.addEventListener("play", _takeoverHandler, true);
 }
 
 // ─── 更新通知 ────────────────────────────────────────────────────────────────
@@ -881,7 +957,14 @@ function detectPJAX() {
   let previousUrl = null;
   setInterval(() => {
     const cur = location.href;
-    if (previousUrl !== cur) { updateButton(); previousUrl = cur; }
+    if (previousUrl !== cur) {
+      updateButton();
+      // ★ 修改(c)：使用常量比较；重置 _autoPlayFiredUrl 而非已废弃的 _autoPlayFired
+      if (GM_config.get("auto_play_mode") === MODE_PER_VIDEO) {
+        _autoPlayFiredUrl = null;
+      }
+      previousUrl = cur;
+    }
   }, 500);
 }
 
