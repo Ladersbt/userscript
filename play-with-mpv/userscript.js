@@ -8,7 +8,7 @@
 // @description:zh-CN   通过 mpv-handler 播放网页上的视频和歌曲
 // @description:zh-TW   通過 mpv-handler 播放網頁上的視頻和歌曲
 // @namespace           play-with-mpv-handler
-// @version             2026.05.25
+// @version             2026.07.26
 // @author              Akatsuki Rui
 // @license             MIT License
 // @require             https://cdn.jsdelivr.net/gh/sizzlemctwizzle/GM_config@06f2015c04db3aaab9717298394ca4f025802873/gm_config.js
@@ -42,9 +42,13 @@ const SITE_KICK          = { mode: block, list: ["/browse", "/category"] };
 const MATCHERS = {
   "www.youtube.com":     SITE_YOUTUBE,
   "m.youtube.com":       SITE_YOUTUBE,
+  "music.youtube.com":   SITE_YOUTUBE,
   "www.twitch.tv":       SITE_TWITCH,
+  "m.twitch.tv":         SITE_TWITCH,
   "www.crunchyroll.com": SITE_CRUNCHYROLL,
+  "m.crunchyroll.com":   SITE_CRUNCHYROLL,
   "www.bilibili.com":    SITE_BILIBILI,
+  "m.bilibili.com":      SITE_BILIBILI,
   "live.bilibili.com":   SITE_BILIBILI_LIVE,
   "kick.com":            SITE_KICK,
 };
@@ -250,11 +254,7 @@ const CONFIG_CSS = css`
   /* ★ 新增：auto_play / takeover / auto_play_mode 尺寸与其他下拉保持一致 */
   #${CONFIG_ID}_field_auto_play,
   #${CONFIG_ID}_field_takeover,
-  #${CONFIG_ID}_field_auto_play_mode {
-    width: 90px;
-    height: 30px;
-    text-align: center;
-  }
+  #${CONFIG_ID}_field_auto_play_mode,
   #${CONFIG_ID}_field_profile,
   #${CONFIG_ID}_field_icon_size,
   #${CONFIG_ID}_field_icon_scale {
@@ -284,17 +284,25 @@ const CONFIG_CSS = css`
     box-shadow: 0 0 0 3px rgba(168,85,247,0.15);
   }
 
-  /* ── 按钮区 ── */
+  /* ── 按钮区：主次分组布局 ──
+     上行：保存 + 关闭（等宽并排，主要操作）
+     下行：恢复默认值（跨整行，弱化样式，危险操作）
+     GM_config 的 DOM 结构为：
+       <div #_buttons_holder>
+         <button #_saveBtn>
+         <button #_closeBtn>
+         <div .reset_holder><a #_resetLink></div>
+       </div>
+     用 Grid 两列布局，reset_holder 跨两列强制换行到第二行 */
   #${CONFIG_ID}_buttons_holder {
-    display: flex;
-    flex-direction: row;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
     gap: 8px;
     margin-top: 6px;
   }
   #${CONFIG_ID} .saveclose_buttons {
-    flex: 1;
     margin: 0;
-    padding: 8px 0;
+    padding: 9px 0;
     border-radius: 10px;
     border: none;
     font-family: 'DM Sans', system-ui, sans-serif;
@@ -303,7 +311,7 @@ const CONFIG_CSS = css`
     cursor: pointer;
     transition: all 0.18s;
   }
-  /* 保存按钮 */
+  /* 保存按钮（主操作） */
   #${CONFIG_ID}_saveBtn {
     background: linear-gradient(135deg, #9333ea, #6d28d9);
     color: #fff;
@@ -313,42 +321,62 @@ const CONFIG_CSS = css`
     box-shadow: 0 4px 20px rgba(147,51,234,0.55);
     transform: translateY(-1px);
   }
-  /* 关闭按钮 */
+  #${CONFIG_ID}_saveBtn:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 8px rgba(147,51,234,0.4);
+  }
+  /* 关闭按钮（次要操作）- 浅紫色与保存形成深浅呼应 */
   #${CONFIG_ID}_closeBtn {
-    background: rgba(255,255,255,0.07);
-    color: #c4b5d8;
-    border: 1px solid rgba(255,255,255,0.12) !important;
+    background: rgba(147,51,234,0.1);
+    color: #c4b5fd;
+    border: 1px solid rgba(147,51,234,0.25) !important;
   }
   #${CONFIG_ID}_closeBtn:hover {
-    background: rgba(255,255,255,0.12);
+    background: rgba(147,51,234,0.18);
+    color: #ddd6fe;
+    border-color: rgba(147,51,234,0.4) !important;
   }
+  /* 重置按钮容器：跨两列换到第二行，文字右对齐
+     不用 flex，保留 GM_config 默认的 text-align: right */
   #${CONFIG_ID} .reset_holder {
+    grid-column: 1 / -1;
     padding-top: 0;
-    display: flex;
+    text-align: right;
   }
-  /* 重置按钮 */
-  #${CONFIG_ID}_resetBtn {
-    flex: 1;
-    padding: 7px 0;
-    border-radius: 10px;
-    border: 1px solid rgba(239,68,68,0.25) !important;
-    background: rgba(239,68,68,0.06);
-    color: rgba(252,165,165,0.8);
+  /* 重置按钮（危险操作，弱化样式）
+     - inline-block 只占文字大小，不占整行
+     - 虚线边框暗示"谨慎"
+     - 字号小一号、颜色更淡，视觉层级低于保存/关闭
+     - hover 时变实线 + 加深，给出明确反馈 */
+  #${CONFIG_ID}_resetLink {
+    display: inline-block;
+    text-align: center;
+    text-decoration: none;
+    padding: 6px 14px;
+    border-radius: 8px;
+    border: 1px dashed rgba(239,68,68,0.25) !important;
+    background: transparent;
+    color: rgba(252,165,165,0.6);
     font-family: 'DM Sans', system-ui, sans-serif;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.18s;
   }
-  #${CONFIG_ID}_resetBtn:hover {
-    background: rgba(239,68,68,0.12);
+  #${CONFIG_ID}_resetLink:hover {
+    background: rgba(239,68,68,0.08);
     border-color: rgba(239,68,68,0.4) !important;
+    border-style: solid;
     color: #fca5a5;
   }
 `;
 
 // ★ 修改：CONFIG_IFRAME_CSS 中 width/max-width 的 30px 是原脚本笔误，修正为 430px
+// ★ 修复：补 display: block。cssText 整体替换会清空 GM_config 在 buildConfigWin 里
+//   设置的 display: block，iframe 默认 display: inline 会让 width/height/transform
+//   失效，面板塌缩到屏幕左上角
 const CONFIG_IFRAME_CSS = css`
+  display: block;
   position: fixed;
   z-index: 99999;
   top: 50%;
@@ -366,6 +394,54 @@ const CONFIG_IFRAME_CSS = css`
   box-shadow: 0 8px 48px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.06) inset, 0 1px 0 rgba(255,255,255,0.1) inset;
   animation: pwm-panel-in 0.22s cubic-bezier(0.34,1.56,0.64,1) both;
 `;
+
+// ─── 配置面板按钮汉化 ────────────────────────────────────────────────────────
+// ★ 修复：从 createButton() 内部提到顶层，供 GM_config 的 open 事件回调直接调用。
+//   GM_config 源码中重置元素是 <a id="_resetLink">（不是 _resetBtn），原写法永远
+//   找不到该元素 → 汉化永不生效。另外 <a> 没有 value 属性，仅设 textContent 等。
+function localizeConfigButtons(frame, retry = 0) {
+  try {
+    const doc = frame.contentDocument || frame.contentWindow.document;
+    if (!doc) return;
+
+    const saveBtn  = doc.getElementById(CONFIG_ID + "_saveBtn");
+    const closeBtn = doc.getElementById(CONFIG_ID + "_closeBtn");
+    const resetLnk = doc.getElementById(CONFIG_ID + "_resetLink");
+
+    if (!saveBtn || !closeBtn || !resetLnk) {
+      if (retry < 20) {
+        setTimeout(() => localizeConfigButtons(frame, retry + 1), 50);
+      }
+      return;
+    }
+
+    saveBtn.value = "保存";
+    saveBtn.textContent = "保存";
+    saveBtn.title = "保存";
+    saveBtn.setAttribute("aria-label", "保存");
+
+    closeBtn.value = "关闭";
+    closeBtn.textContent = "关闭";
+    closeBtn.title = "关闭";
+    closeBtn.setAttribute("aria-label", "关闭");
+
+    // reset 是 <a> 元素，无 value 属性
+    resetLnk.textContent = "恢复默认值";
+    resetLnk.title = "恢复默认值";
+    resetLnk.setAttribute("aria-label", "恢复默认值");
+
+    frame.style.visibility = "";
+    frame.style.opacity = "1";
+    frame.style.transition = "opacity 0.15s ease";
+  } catch (_) {
+    if (retry < 20) {
+      setTimeout(() => localizeConfigButtons(frame, retry + 1), 50);
+    } else {
+      frame.style.visibility = "";
+      frame.style.opacity = "1";
+    }
+  }
+}
 
 GM_config.init({
   id: CONFIG_ID,
@@ -468,9 +544,18 @@ GM_config.init({
       setupTakeover();
     },
 
-    // ★ 修改：统一缩进为空格，与其余事件保持一致（原脚本 open/close 用了制表符）
-    open: () => {
+    // ★ 修复：在 GM_config 的 center() 之后应用自定义样式。
+    //   GM_config 的 buildConfigWin 在 iframe load 事件里执行 center()，
+    //   重负载页面（YouTube 等）上 load 可能晚于外部 setTimeout(50ms)，
+    //   导致我们的 cssText 先应用、center() 随后覆盖回左上角。
+    //   open 事件在 center() 之后、display=block 之前触发，时机可控。
+    open: (doc, win, frame) => {
       hideMainButton();
+      frame.style.cssText = CONFIG_IFRAME_CSS.trim();
+      // 先隐藏，等按钮汉化完成再显示（避免中英闪烁）
+      frame.style.visibility = "hidden";
+      frame.style.opacity = "0";
+      localizeConfigButtons(frame);
     },
 
     close: () => {
@@ -576,13 +661,23 @@ function updateButton() {
 
 // ─── 拖拽 ────────────────────────────────────────────────────────────────────
 
+// ★ 修复：拖拽与点击的事件协调 flag。
+//   DOM 事件顺序为 mousedown → mousemove* → mouseup → click。
+//   拖拽发生时，mouseup 置 _justDragged=true，紧随的 click 事件读到 flag 后跳过播放，
+//   随后 setTimeout(0) 复位（click 同步执行于 setTimeout 之前，flag 必然被读到）。
+let _justDragged = false;
+
 function makeDraggable(buttonDiv) {
   const pos = loadPosition();
   buttonDiv.style.left   = pos.x + "px";
   buttonDiv.style.bottom = pos.y + "px";
 
   buttonDiv.addEventListener("mousedown", (e) => {
-    if (e.target.closest(".pwm-settings") || e.target.closest(".pwm-play")) return;
+    // ★ 修复：原写法对 .pwm-play 也提前 return，导致拖拽逻辑永远不执行。
+    //   .pwm-play 是父容器内唯一可见子元素（占满整个 48×48 区域），
+    //   对它 return 等于禁用全部拖拽。这里只排除设置齿轮按钮，
+    //   点击/拖拽由 click handler 和 _justDragged flag 协调。
+    if (e.target.closest(".pwm-settings")) return;
 
     const rect    = buttonDiv.getBoundingClientRect();
     const offsetX = e.clientX - rect.left;
@@ -607,14 +702,20 @@ function makeDraggable(buttonDiv) {
       const newBottom = winH - newTop - divH;
       buttonDiv.style.left   = newLeft  + "px";
       buttonDiv.style.bottom = newBottom + "px";
-      savePosition(newLeft, newBottom);
     }
 
     function onMouseUp() {
       buttonDiv.classList.remove("dragging");
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("mouseup",   onMouseUp);
-      if (!dragged) triggerPlay();
+      if (dragged) {
+        // 拖拽发生：保存最终位置（避免 mousemove 每帧写 GM 存储），
+        // 并置 flag 让紧随的 click 事件跳过播放
+        savePosition(buttonDiv.offsetLeft, parseInt(buttonDiv.style.bottom, 10) || 0);
+        _justDragged = true;
+        setTimeout(() => { _justDragged = false; }, 0);
+      }
+      // 不拖时也不在此调用 triggerPlay，统一交给 click handler 处理
     }
 
     document.addEventListener("mousemove", onMouseMove);
@@ -625,6 +726,13 @@ function makeDraggable(buttonDiv) {
 // ─── 播放触发 ────────────────────────────────────────────────────────────────
 
 function triggerPlay() {
+  // ★ 修复：清空所有 pending 的 debounce 计时器，避免以下双发场景：
+  //   1) 手动点击 + auto_play/takeover 监听器已 schedule timer → 立即执行 + 500ms 后再执行
+  //   2) auto_play 与 takeover 同时开启 → 首次 play 事件 schedule 两个独立 timer → 500ms 后双发
+  for (const k of Object.keys(_debounceTimers)) {
+    clearTimeout(_debounceTimers[k]);
+    delete _debounceTimers[k];
+  }
   if (!matchUrl()) return;
   const syncTime  = GM_config.get("sync_time").toLowerCase() === "yes";
   const startTime = syncTime ? getCurrentTime() : null;
@@ -637,6 +745,8 @@ function triggerPlay() {
 //   同时加入去抖逻辑修复 YouTube 双窗口 bug
 
 // ★ 修改(c)：改为按 key 各持独立计时器，auto 和 takeover 互不干扰
+//   注意：当前实为 leading-edge throttle（500ms 内首调用执行，后续丢弃），
+//   不是标准 debounce。triggerPlay 入口已统一清空 pending timer，避免双发。
 const _debounceTimers = {};
 function triggerPlayDebounced(key) {
   if (_debounceTimers[key]) return;
@@ -656,10 +766,14 @@ function isVisibleVideo(video) {
 }
 
 // ── 功能 A：首次自动启动 ──────────────────────────────────────────────────────
-// ★ 修改(c)：_autoPlayFired 从 boolean 改为记录已触发的 URL 字符串
-//   handler 内部比对 location.href，彻底消除 detectPJAX 500ms 重置的竞态窗口
-let _autoPlayFiredUrl = null;
-let _autoPlayHandler  = null;
+// ★ 修复：MODE_FIRST_LOAD 模式下，detectPJAX 不会重置 _autoPlayFiredUrl，
+//   但 SPA 跳转后 location.href 变为新值，与旧值必然不等 → 仍会触发，与
+//   "仅首次加载"语义不符。改为按模式分支：
+//   - MODE_PER_VIDEO：比对 URL，detectPJAX 切换视频时重置 _autoPlayFiredUrl
+//   - MODE_FIRST_LOAD：用独立 boolean _autoPlayFiredOnce，整个页面生命周期内只触发一次
+let _autoPlayFiredUrl   = null;
+let _autoPlayFiredOnce  = false;
+let _autoPlayHandler    = null;
 
 function setupAutoPlay() {
   // 先清理旧监听
@@ -674,9 +788,17 @@ function setupAutoPlay() {
     if (!(e.target instanceof HTMLVideoElement)) return;
     if (!matchUrl()) return;
     if (!isVisibleVideo(e.target)) return;
-    if (_autoPlayFiredUrl === location.href) return; // ★ 修改(c)：比对 URL 而非 boolean
-    _autoPlayFiredUrl = location.href;
-    triggerPlayDebounced("auto");                     // ★ 修改(c)：传入标识，使用独立 debounce
+
+    const mode = GM_config.get("auto_play_mode");
+    if (mode === MODE_FIRST_LOAD) {
+      if (_autoPlayFiredOnce) return;
+      _autoPlayFiredOnce = true;
+    } else {
+      // MODE_PER_VIDEO
+      if (_autoPlayFiredUrl === location.href) return;
+      _autoPlayFiredUrl = location.href;
+    }
+    triggerPlayDebounced("auto");
   };
 
   document.addEventListener("play", _autoPlayHandler, true);
@@ -759,6 +881,9 @@ function createButton() {
       border: 0;
       border-radius: 50%;
       background-color: rgba(20, 10, 35, 0.55);
+      /* 防御性兜底：实际 background-size 由 applyButtonAppearance()
+         用 inline style 覆盖为 finalSize + "px"。这里保留 72% 仅在
+         applyButtonAppearance 未执行时（如 GM_config 初始化失败）提供回退 */
       background-size: 72%;
       background-position: center;
       background-repeat: no-repeat;
@@ -850,6 +975,8 @@ function createButton() {
   // 键盘 / 辅助功能兜底 + 波纹动效
   buttonPlay.addEventListener("click", (e) => {
     e.preventDefault(); e.stopPropagation();
+    // ★ 修复：拖拽刚结束时紧随的 click 事件应跳过播放与波纹
+    if (_justDragged) return;
     // 波纹
     const ripple = document.createElement("span");
     ripple.className = "pwm-ripple";
@@ -864,80 +991,12 @@ function createButton() {
   buttonSettings.className = "pwm-settings";
   buttonSettings.title     = "打开设置";
 
-  // ★ 修改：localizeConfigButtons 提出到正确层级（原脚本此函数错误地嵌入在
-  //   buttonSettings.title 赋值语句后，导致缩进/结构混乱）
-  function localizeConfigButtons(frame, retry = 0) {
-    try {
-      const doc = frame.contentDocument || frame.contentWindow.document;
-      if (!doc) return;
-
-      const saveBtn  = doc.getElementById(CONFIG_ID + "_saveBtn");
-      const closeBtn = doc.getElementById(CONFIG_ID + "_closeBtn");
-      const resetBtn = doc.getElementById(CONFIG_ID + "_resetBtn");
-
-      if (!saveBtn || !closeBtn || !resetBtn) {
-        if (retry < 20) {
-          setTimeout(() => localizeConfigButtons(frame, retry + 1), 50);
-        }
-        return;
-      }
-
-      if (saveBtn) {
-        saveBtn.value = "保存";
-        saveBtn.textContent = "保存";
-        saveBtn.title = "保存";
-        saveBtn.setAttribute("aria-label", "保存");
-      }
-
-      if (closeBtn) {
-        closeBtn.value = "关闭";
-        closeBtn.textContent = "关闭";
-        closeBtn.title = "关闭";
-        closeBtn.setAttribute("aria-label", "关闭");
-      }
-
-      if (resetBtn) {
-        resetBtn.value = "恢复默认值";
-        resetBtn.textContent = "恢复默认值";
-        resetBtn.title = "恢复默认值";
-        resetBtn.setAttribute("aria-label", "恢复默认值");
-      }
-
-      frame.style.visibility = "";
-      frame.style.opacity = "1";
-      frame.style.transition = "opacity 0.15s ease";
-    } catch (_) {
-      if (retry < 20) {
-        setTimeout(() => localizeConfigButtons(frame, retry + 1), 50);
-      } else {
-        frame.style.visibility = "";
-        frame.style.opacity = "1";
-      }
-    }
-  }
-
+  // ★ 修复：localizeConfigButtons 已提到顶层，cssText 应用搬到 GM_config 的
+  //   open 事件回调（在 center() 之后执行），此处只需调用 GM_config.open()
   buttonSettings.addEventListener("click", (e) => {
     e.stopPropagation();
     if (!GM_config.isOpen) {
-      hideMainButton();
       GM_config.open();
-
-      setTimeout(() => {
-        const frame = document.getElementById(CONFIG_ID + "_frame");
-        if (!frame) return;
-
-        // 先隐藏，等按钮汉化完成再显示（避免闪烁）
-        frame.style.visibility = "hidden";
-        frame.style.opacity = "0";
-        // 用 cssText 整体替换，这是最后写入，稳赢
-        frame.style.cssText = CONFIG_IFRAME_CSS.trim();
-
-        if (frame.contentDocument && frame.contentDocument.readyState === "complete") {
-          localizeConfigButtons(frame);
-        } else {
-          frame.addEventListener("load", () => localizeConfigButtons(frame), { once: true });
-        }
-      }, 50);
     }
   });
 
@@ -951,30 +1010,54 @@ function createButton() {
   document.addEventListener("fullscreenchange", updateButton);
 }
 
-// ─── PJAX / SPA 路由监测 ────────────────────────────────────────────────────
+// ─── SPA 路由监测 ────────────────────────────────────────────────────────────
+
+// ★ 修复：从 500ms 轮询改为 History API hook + popstate 监听
+//   原写法最坏要等 500ms 才检测到 URL 变化，新写法在路由变化的同步回调里处理，
+//   响应延迟从最多 500ms 降到 0。同时拦截 pushState/replaceState 是行业标准做法
+//   （React Router / Vue Router 等都通过这两个 API 切换路由）。
+function onRouteChange() {
+  updateButton();
+  if (GM_config.get("auto_play_mode") === MODE_PER_VIDEO) {
+    _autoPlayFiredUrl = null;
+  }
+}
 
 function detectPJAX() {
-  let previousUrl = null;
-  setInterval(() => {
-    const cur = location.href;
-    if (previousUrl !== cur) {
-      updateButton();
-      // ★ 修改(c)：使用常量比较；重置 _autoPlayFiredUrl 而非已废弃的 _autoPlayFired
-      if (GM_config.get("auto_play_mode") === MODE_PER_VIDEO) {
-        _autoPlayFiredUrl = null;
-      }
-      previousUrl = cur;
-    }
-  }, 500);
+  const origPush    = history.pushState;
+  const origReplace = history.replaceState;
+
+  history.pushState = function (...args) {
+    const ret = origPush.apply(this, args);
+    onRouteChange();
+    return ret;
+  };
+  history.replaceState = function (...args) {
+    const ret = origReplace.apply(this, args);
+    onRouteChange();
+    return ret;
+  };
+  window.addEventListener("popstate", onRouteChange);
 }
 
 // ─── TrustedHTML 兼容 ────────────────────────────────────────────────────────
 
-if (window.trustedTypes && !trustedTypes.defaultPolicy) {
-  const pass = (x) => x;
-  trustedTypes.createPolicy("default", {
-    createHTML: pass, createScriptURL: pass, createScript: pass,
-  });
+// ★ 修复：包 try/catch。W3C TrustedTypes 规范规定：
+//   1) 每个 policy name 只能创建一次，重复创建抛 SecurityError
+//   2) 若 CSP 的 trusted-types 指令限定了允许列表且不含 "default"，创建失败
+//   3) 检查与创建之间存在竞态，其他脚本/扩展可能抢先注册 "default"
+//   任一情况发生都静默降级，避免影响后续 GM_config 初始化
+if (window.trustedTypes) {
+  try {
+    if (!trustedTypes.defaultPolicy) {
+      const pass = (x) => x;
+      trustedTypes.createPolicy("default", {
+        createHTML: pass, createScriptURL: pass, createScript: pass,
+      });
+    }
+  } catch (_) {
+    // policy 已存在或被 CSP 禁止，静默降级
+  }
 }
 
 // ─── 启动 ────────────────────────────────────────────────────────────────────
